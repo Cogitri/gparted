@@ -1,0 +1,4 @@
+option('man', type: 'boolean', value: true, description: 'install manpages')
+option('libparted_dmraid', type: 'boolean', value: false, description: 'support dmraid')
+option('online-resize', type: 'boolean', value: false, description: 'support online resize')
+option('polkit', type: 'boolean', value: false, description: 'install polkit policy files')
