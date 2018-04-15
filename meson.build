@@ -28,7 +28,9 @@ if get_option('libparted_dmraid')
   conf.set('USE_LIBPARTED_DMRAID', 1)
 endif
 
+# Check for libparted >= 3.2 for online resize support
 if get_option('online-resize')
+  dependency('libparted', version: '>=3.2')
   conf.set('ENABLE_ONLINE_RESIZE', 1)
 endif
 
@@ -36,8 +38,6 @@ gparted_version = meson.project_version()
 conf.set_quoted('VERSION', gparted_version)
 conf.set_quoted('PACKAGE_VERSION', gparted_version)
 conf.set_quoted('PACKAGE_STRING', 'gparted' + gparted_version)
-
-# Define variables dependening on what versions of the libs are installed
 
 # Check for libparted 2.0 to 3.0 inclusive for a bug where loop table
 # creation doesn't delete old partitions.
@@ -47,35 +47,44 @@ else
   conf.set('ENABLE_LOOP_DELETE_OLD_PTNS_WORKAROUND', false)
 endif
 
+# Check for libparted >= 2.2 for improved informing the kernel to
+# re-read the partition table code and support of larger sector sizes
+# (> 512 bytes).
 if dependency('libparted', version: '>=2.2', required: false).found()
   conf.set('USE_LIBPARTED_LARGE_SECTOR_SUPPORT', 1)
 else
   conf.set('ENABLE_PT_REREAD_WORKAROUND', 1)
 endif
 
+# Check for ped_file_system_resize() function to determine the existence
+# of the API in the original parted library.  Available in parted <= 2.4.
 parted_fs_resize_dep = [ ]
 if cpp.has_function('ped_file_system_resize', dependencies: libparted_dep)
   conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
+# If not already found, check for ped_file_system_resize() function in
+# the parted-fs-resize library to determine the need to use the new
+# library.  Available in parted >= 3.1.
+elif cpp.find_library('parted-fs-resize', required: false).found()
+  parted_fs_resize_dep = cpp.find_library('parted-fs-resize')
+  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
 else
-  parted_fs_resize_dep = cpp.find_library('parted-fs-resize')
-  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
+  conf.set('HAVE_LIBPARTED_FS_RESIZE', false)
 endif
 
-if dependency('libparted', version: '>=3.2', required: false).found()
-  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
-  parted_fs_resize_dep = cpp.find_library('parted-fs-resize')
-endif
-
+# Check for gtkmm >= 2.22 to determine availability of Gtk::MessageDialog::get_message_area().
 if dependency('gtkmm-2.4', version: '>=2.22.0', required: false).found()
   conf.set('HAVE_GET_MESSAGE_AREA', 1)
 endif
 
+# Only enable C++11 compilation if required
 cxx_std = 'c++98'
 
+# Check for glibmm >= 2.45.40 which requires C++11 compilation
 if dependency('gtkmm-2.4', version: '>=2.45.40', required: false).found()
   cxx_std = 'c++11'
 endif
 
+# Check for libsigc++ >= 2.5.1 which requires C++11 compilation.
 if dependency('sigc++-2.0', version: '>-2.5.1', required: false).found()
   cxx_std = 'c++11'
 endif
@@ -85,27 +94,11 @@ conf.set('PACKAGE_NAME', 'gparted')
 
 #TODO: Optionalize the below if necessary
 conf.set('ENABLE_NLS', true)
-conf.set('HAVE_BIND_TEXTDOMAIN_CODESET', 1)
-conf.set('HAVE_DCGETTEXT', 1)
-conf.set('HAVE_DLFCN_H', 1)
-conf.set('HAVE_GETTEXT', 1)
 conf.set('HAVE_GET_MESSAGE_AREA', 1)
-conf.set('HAVE_GLIB_REGEX', 1)
-conf.set('HAVE_GTK_SHOW_URI', 1)
 conf.set('HAVE_INTTYPES_H', 1)
-conf.set('HAVE_LV_MESSAGES', 1)
 conf.set('HAVE_LIBPARTED', 1)
 conf.set('HAVE_LIBUUID', 1)
-conf.set('HAVE_LOCAL_H', 1)
-conf.set('HAVE_MEMORY_H', 1)
-conf.set('HAVE_SET_DEFAULT_ICON_NAME', 1)
-conf.set('HAVE_STDINT_H', 1)
-conf.set('HAVE_STRINGS_H', 1)
 conf.set('HAVE_STRING_H', 1)
-conf.set('HAVE_SYS_STAT_H', 1)
-conf.set('HAVE_SYS_TYPES_H', 1)
-conf.set('HAVE_UNISTD_H', 1)
-conf.set('STDC_HEADERS', 1)
 conf.set('ENABLE_HELP_DOC', false)
 
 configure_file(
@@ -119,7 +112,7 @@ include = [
   include_directories('.'),
 ]
 
-# po stuff
+# i18n stuff
 i18n = import('i18n')
 
 intltool = find_program('intltool-merge')
@@ -174,23 +167,20 @@ if get_option('polkit')
     install: true,
     install_dir: polkitpolicydir
   )
-
-  gksuprog = 'pkexec --disable-internal-agent'
 endif
 
-if not is_variable('gksuprog')
-  if find_program('gksudo', required: false).found()
-    gksuprog = 'gksudo'
-  endif
-  if find_program('gksu', required: false).found()
-    gksuprog = 'gksu'
-  endif
-  if find_program('kdesudo', required: false).found()
-    gksuprog = 'kdesudo'
-  endif
-  if find_program('xdg-su', required: false).found()
-    gksuprog = 'xdg-su -c'
-  endif
+# Find graphical privilege escalation program
+gksuprog = [ ]
+if get_option('polkit')
+  gksuprog = 'pkexec --disable-internal-agent'
+elif find_program('gksudo', required: false).found()
+  gksuprog = 'gksudo'
+elif find_program('gksu', required: false).found()
+  gksuprog = 'gksu'
+elif find_program('kdesudo', required: false).found()
+  gksuprog = 'kdesudo'
+elif find_program('xdg-su', required: false).found()
+  gksuprog = 'xdg-su -c'
 endif
 
 gparted_bin_conf = configuration_data()
