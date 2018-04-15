@@ -94,7 +94,6 @@ conf.set('PACKAGE_NAME', 'gparted')
 
 #TODO: Optionalize the below if necessary
 conf.set('ENABLE_NLS', true)
-conf.set('HAVE_GET_MESSAGE_AREA', 1)
 conf.set('HAVE_INTTYPES_H', 1)
 conf.set('HAVE_LIBPARTED', 1)
 conf.set('HAVE_LIBUUID', 1)
@@ -117,9 +116,20 @@ i18n = import('i18n')
 
 intltool = find_program('intltool-merge')
 
+podir= 'po'
+
+intltool_cache = join_paths(meson.current_build_dir(), 'intltool-merge-cache')
+
+intltool_xml_command = [intltool, '-x', '-u',
+                    '-c', intltool_cache,
+                    podir, '@INPUT@', '@OUTPUT@']
+
+intltool_desktop_command = [intltool, '-d', '-u',
+                    '-c', intltool_cache,
+                    podir, '@INPUT@', '@OUTPUT@']
+
 gettext_package = 'gparted'
 add_project_arguments('-DGETTEXT_PACKAGE="' + gettext_package + '"', language: 'cpp')
-podir= 'po'
 subdir(podir)
 
 po_conf = configuration_data()
@@ -132,22 +142,23 @@ desktop_in = configure_file(
   configuration: po_conf
 )
 
-custom_target(
-  'gparted.desktop',
-  input: desktop_in,
-  output: 'gparted.desktop',
-  command: [ intltool, '-d', '-u', podir, '@INPUT@', '@OUTPUT@'],
-  install: true,
-  install_dir: join_paths(get_option('datadir'), 'applications')
-)
-
+# TODO: maybe drop intltool and use pure gettext so that we can use i18n.merge_file instead
 custom_target(
   'gparted.appdata.xml',
   input: 'gparted.appdata.xml.in',
   output: 'gparted.appdata.xml',
-  command: [ intltool, '-x', '-u', podir, '@INPUT@', '@OUTPUT@'],
+  command: intltool_xml_command,
   install: true,
   install_dir: join_paths(get_option('datadir'), 'appdata')
+)
+
+custom_target(
+  'gparted.desktop',
+  input: desktop_in,
+  output: 'gparted.desktop',
+  command: intltool_desktop_command,
+  install: true,
+  install_dir: join_paths(get_option('datadir'), 'applications')
 )
 
 if get_option('polkit')
@@ -170,7 +181,7 @@ if get_option('polkit')
 endif
 
 # Find graphical privilege escalation program
-gksuprog = [ ]
+gksuprog = ''
 if get_option('polkit')
   gksuprog = 'pkexec --disable-internal-agent'
 elif find_program('gksudo', required: false).found()
