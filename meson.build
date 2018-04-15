@@ -1,10 +1,15 @@
-project('gparted', 'cpp', version : '0.31.0')
+project(
+  'gparted',
+  'cpp',
+  version : '0.31.0',
+  meson_version: '>= 0.46.0',
+)
+
+cpp = meson.get_compiler('cpp')
 
 add_project_arguments('-DHAVE_CONFIG_H', language: 'cpp')
 add_project_arguments('-DGNOME_ICONDIR="' + join_paths(get_option('datadir'), 'pixmaps') + '"', language: 'cpp')
 add_project_arguments('-DGNOMELOCALEDIR="' + join_paths(get_option('datadir'), 'locale') + '"', language: 'cpp')
-
-cpp = meson.get_compiler('cpp')
 
 glibmm_dep = dependency('glibmm-2.4', version: '>=2.14.0')
 gtkmm_dep = dependency('gtkmm-2.4', version: '>2.8')
@@ -16,13 +21,8 @@ uuid_dep = dependency('uuid')
 conf = configuration_data()
 
 if get_option('man')
-  subdir('docs')
+  subdir('doc')
 endif
-
-#  conf.set('ENABLE_HELP_DOC', true)
-#else
-#  conf.set('ENABLE_HELP_DOC', false)
-#endif
 
 if get_option('libparted_dmraid')
   conf.set('USE_LIBPARTED_DMRAID', 1)
@@ -53,16 +53,13 @@ else
   conf.set('ENABLE_PT_REREAD_WORKAROUND', 1)
 endif
 
-#has_old_lp_fs_resize_api = cpp.has_function('ped_file_system_resize', prefix: '#include <parted/filesys.h>')
-
 parted_fs_resize_dep = [ ]
-
-#if has_old_lp_fs_resize_api
-#  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
-#else
-#  parted_fs_resize_dep = cpp.find_library('lparted-fs-resize')
-#  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
-#endif
+if cpp.has_function('ped_file_system_resize', dependencies: libparted_dep)
+  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
+else
+  parted_fs_resize_dep = cpp.find_library('parted-fs-resize')
+  conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
+endif
 
 if dependency('libparted', version: '>=3.2', required: false).found()
   conf.set('HAVE_LIBPARTED_FS_RESIZE', 1)
@@ -73,16 +70,20 @@ if dependency('gtkmm-2.4', version: '>=2.22.0', required: false).found()
   conf.set('HAVE_GET_MESSAGE_AREA', 1)
 endif
 
-#need_cxx11 = false
-#
-#if dependency('gtkmm-2.4', version: '>=2.45.40', required: false)
-#  need_cxx11 = true
-#endif
-#
-#if dependency('sigc++-2.0', version: '>-2.5.1', required: false)
-#  need_cxx11 = true
-#endif
+cxx_std = 'c++98'
 
+if dependency('gtkmm-2.4', version: '>=2.45.40', required: false).found()
+  cxx_std = 'c++11'
+endif
+
+if dependency('sigc++-2.0', version: '>-2.5.1', required: false).found()
+  cxx_std = 'c++11'
+endif
+
+conf.set('PACKAGE', 'gparted')
+conf.set('PACKAGE_NAME', 'gparted')
+
+#TODO: Optionalize the below if necessary
 conf.set('ENABLE_NLS', true)
 conf.set('HAVE_BIND_TEXTDOMAIN_CODESET', 1)
 conf.set('HAVE_DCGETTEXT', 1)
@@ -94,7 +95,6 @@ conf.set('HAVE_GTK_SHOW_URI', 1)
 conf.set('HAVE_INTTYPES_H', 1)
 conf.set('HAVE_LV_MESSAGES', 1)
 conf.set('HAVE_LIBPARTED', 1)
-conf.set('HAVE_LIBPARTED_FS_RESIZE', false)
 conf.set('HAVE_LIBUUID', 1)
 conf.set('HAVE_LOCAL_H', 1)
 conf.set('HAVE_MEMORY_H', 1)
@@ -105,12 +105,13 @@ conf.set('HAVE_STRING_H', 1)
 conf.set('HAVE_SYS_STAT_H', 1)
 conf.set('HAVE_SYS_TYPES_H', 1)
 conf.set('HAVE_UNISTD_H', 1)
-conf.set('PACKAGE', 'gparted')
-conf.set('PACKAGE_NAME', 'gparted')
 conf.set('STDC_HEADERS', 1)
+conf.set('ENABLE_HELP_DOC', false)
 
-configure_file(output : 'config.h',
-               configuration : conf)
+configure_file(
+  output: 'config.h',
+  configuration: conf
+)
 
 include = [
   include_directories('include'),
@@ -128,8 +129,18 @@ add_project_arguments('-DGETTEXT_PACKAGE="' + gettext_package + '"', language: '
 podir= 'po'
 subdir(podir)
 
-i18n.merge_file(
+po_conf = configuration_data()
+
+po_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
+
+desktop_in = configure_file(
   input: 'gparted.desktop.in.in',
+  output: 'gparted.desktop.in',
+  configuration: po_conf
+)
+
+i18n.merge_file(
+  input: desktop_in,
   output: 'gparted.desktop',
   type: 'desktop',
   po_dir: 'po',
@@ -137,7 +148,8 @@ i18n.merge_file(
   install_dir: join_paths(get_option('datadir'), 'applications')
 )
 
-custom_target('gparted.desktop',
+custom_target(
+  'gparted.appdata.xml',
   input: 'gparted.appdata.xml.in',
   output: 'gparted.appdata.xml',
   command: [ intltool, '--xml-style', podir, '@INPUT@', '@OUTPUT@'],
@@ -148,8 +160,15 @@ custom_target('gparted.desktop',
 if get_option('polkit')
   polkit_dep = dependency('polkit-agent-1', version: '>=0.102')
   polkitpolicydir = join_paths(get_option('datadir'), 'polkit-1/actions')
-  i18n.merge_file(
+
+  polkit_policy_in = configure_file(
     input: 'org.gnome.gparted.policy.in.in',
+    output: 'org.gnome.gparted.policy.in',
+    configuration: po_conf
+  )
+
+  i18n.merge_file(
+    input: polkit_policy_in,
     output: 'org.gnome.gparted.policy',
     po_dir: 'po',
     install: true,
@@ -157,4 +176,5 @@ if get_option('polkit')
   )
 endif
 
+subdir('data')
 subdir('src')

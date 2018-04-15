@@ -83,4 +83,5 @@ gparted_executable = executable(
   dependencies: deps,
   install: true,
   include_directories: include,
+  override_options: ['cpp_std=' + cxx_std],
 )
