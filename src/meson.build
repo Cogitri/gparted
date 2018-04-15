@@ -78,7 +78,7 @@ deps = [
 ]
 
 gparted_executable = executable(
-  'gparted',
+  'gpartedbin',
   gparted_sources,
   dependencies: deps,
   install: true,

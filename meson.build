@@ -139,11 +139,11 @@ desktop_in = configure_file(
   configuration: po_conf
 )
 
-i18n.merge_file(
+custom_target(
+  'gparted.desktop',
   input: desktop_in,
   output: 'gparted.desktop',
-  type: 'desktop',
-  po_dir: 'po',
+  command: [ intltool, '-d', '-u', podir, '@INPUT@', '@OUTPUT@'],
   install: true,
   install_dir: join_paths(get_option('datadir'), 'applications')
 )
@@ -152,7 +152,7 @@ custom_target(
   'gparted.appdata.xml',
   input: 'gparted.appdata.xml.in',
   output: 'gparted.appdata.xml',
-  command: [ intltool, '--xml-style', podir, '@INPUT@', '@OUTPUT@'],
+  command: [ intltool, '-x', '-u', podir, '@INPUT@', '@OUTPUT@'],
   install: true,
   install_dir: join_paths(get_option('datadir'), 'appdata')
 )
@@ -174,7 +174,44 @@ if get_option('polkit')
     install: true,
     install_dir: polkitpolicydir
   )
+
+  gksuprog = 'pkexec --disable-internal-agent'
 endif
+
+if not is_variable('gksuprog')
+  if find_program('gksudo', required: false).found()
+    gksuprog = 'gksudo'
+  endif
+  if find_program('gksu', required: false).found()
+    gksuprog = 'gksu'
+  endif
+  if find_program('kdesudo', required: false).found()
+    gksuprog = 'kdesudo'
+  endif
+  if find_program('xdg-su', required: false).found()
+    gksuprog = 'xdg-su -c'
+  endif
+endif
+
+gparted_bin_conf = configuration_data()
+
+gparted_bin_conf.set('sbindir', join_paths(get_option('prefix'), get_option('bindir')))
+gparted_bin_conf.set('gksuprog', gksuprog)
+gparted_bin_conf.set('enable_xhost_root', get_option('xhost_root'))
+gparted_bin_conf.set('bindir', join_paths(get_option('prefix'), get_option('bindir')))
+
+gparted_bin = configure_file(
+  input: 'gparted.in',
+  output: 'gparted',
+  configuration: gparted_bin_conf
+)
+
+install_data(
+  gparted_bin,
+  install_dir: join_paths(get_option('bindir')),
+  rename: 'gparted',
+  install_mode: 'rwxr-xr-x'
+)
 
 subdir('data')
 subdir('src')
