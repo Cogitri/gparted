@@ -8,7 +8,6 @@ project(
 cpp = meson.get_compiler('cpp')
 
 add_project_arguments('-DHAVE_CONFIG_H', language: 'cpp')
-add_project_arguments('-DGNOME_ICONDIR="' + join_paths(get_option('datadir'), 'pixmaps') + '"', language: 'cpp')
 add_project_arguments('-DGNOMELOCALEDIR="' + join_paths(get_option('datadir'), 'locale') + '"', language: 'cpp')
 
 glibmm_dep = dependency('glibmm-2.4', version: '>=2.14.0')
@@ -19,20 +18,6 @@ libparted_dep = dependency('libparted', version: '>=1.7.1')
 uuid_dep = dependency('uuid')
 
 conf = configuration_data()
-
-if get_option('man')
-  subdir('doc')
-endif
-
-if get_option('libparted_dmraid')
-  conf.set('USE_LIBPARTED_DMRAID', 1)
-endif
-
-# Check for libparted >= 3.2 for online resize support
-if get_option('online-resize')
-  dependency('libparted', version: '>=3.2')
-  conf.set('ENABLE_ONLINE_RESIZE', 1)
-endif
 
 gparted_version = meson.project_version()
 conf.set_quoted('VERSION', gparted_version)
@@ -105,7 +90,7 @@ configure_file(
   configuration: conf
 )
 
-include = [
+include_dirs = [
   include_directories('include'),
   include_directories('src'),
   include_directories('.'),
@@ -116,7 +101,7 @@ i18n = import('i18n')
 
 intltool = find_program('intltool-merge')
 
-podir= 'po'
+podir = '../po'
 
 intltool_cache = join_paths(meson.current_build_dir(), 'intltool-merge-cache')
 
@@ -130,7 +115,7 @@ intltool_desktop_command = [intltool, '-d', '-u',
 
 gettext_package = 'gparted'
 add_project_arguments('-DGETTEXT_PACKAGE="' + gettext_package + '"', language: 'cpp')
-subdir(podir)
+subdir('po')
 
 po_conf = configuration_data()
 
@@ -162,7 +147,6 @@ custom_target(
 )
 
 if get_option('polkit')
-  polkit_dep = dependency('polkit-agent-1', version: '>=0.102')
   polkitpolicydir = join_paths(get_option('datadir'), 'polkit-1/actions')
 
   polkit_policy_in = configure_file(
@@ -171,10 +155,11 @@ if get_option('polkit')
     configuration: po_conf
   )
 
-  i18n.merge_file(
+  custom_target(
+    'org.gnome.gparted.policy',
     input: polkit_policy_in,
     output: 'org.gnome.gparted.policy',
-    po_dir: 'po',
+    command: intltool_xml_command,
     install: true,
     install_dir: polkitpolicydir
   )
@@ -183,6 +168,8 @@ endif
 # Find graphical privilege escalation program
 gksuprog = ''
 if get_option('polkit')
+  # Check for pkexec >= 0.102 for it's ability to run X11 apps.
+  polkit_dep = dependency('polkit-agent-1', version: '>=0.102')
   gksuprog = 'pkexec --disable-internal-agent'
 elif find_program('gksudo', required: false).found()
   gksuprog = 'gksudo'
@@ -194,6 +181,7 @@ elif find_program('xdg-su', required: false).found()
   gksuprog = 'xdg-su -c'
 endif
 
+# Configure the gparted script
 gparted_bin_conf = configuration_data()
 
 gparted_bin_conf.set('sbindir', join_paths(get_option('prefix'), get_option('bindir')))
@@ -213,6 +201,21 @@ install_data(
   rename: 'gparted',
   install_mode: 'rwxr-xr-x'
 )
+
+# Optional stuff
+if get_option('libparted_dmraid')
+  conf.set('USE_LIBPARTED_DMRAID', 1)
+endif
+
+# Check for libparted >= 3.2 for online resize support
+if get_option('online-resize')
+  dependency('libparted', version: '>=3.2')
+  conf.set('ENABLE_ONLINE_RESIZE', 1)
+endif
+
+if get_option('man')
+  subdir('doc')
+endif
 
 subdir('data')
 subdir('src')
